@@ -1,4 +1,7 @@
 #include <check.h>
+#include <time.h>
+#include <stdlib.h>
+#include <stdio.h>
 #include "chip8.h"
 
 
@@ -478,6 +481,53 @@ START_TEST(test_jump_relative_instruction){
 }
 END_TEST;
 
+/* Test the rand instruction
+ * 0xCXNN generates a random number [0,255] ands it with an 8bin immediate
+ * value and stores it in Vx 
+ * Vx = (rand() % 256) & NN); */
+START_TEST(test_rand_instruction){
+        struct mState *ms;
+        ms = create_mState();
+        ck_assert_ptr_nonnull(ms);
+        /* Anding with zero should always generate 0 */
+        run_instruction(ms, 0xC000);
+        ck_assert_uint_eq(ms->registers[0], 0);
+
+        /* Basic test that random spread is correct */
+        size_t sum = 0;
+        size_t i;
+        for(i = 0; i < 10000; i++){
+                run_instruction(ms, 0xC001);
+                /* Assert that the value is a one or zero */
+                ck_assert_uint_le(ms->registers[0], 1);
+                sum += ms->registers[0];
+        }
+        /* Assert that the number of 1s is within 2% of the expected value of
+         * 500 */
+        ck_assert_uint_le(sum, 5100);
+        ck_assert_uint_ge(sum, 4900);
+
+        /* check the extreme values */
+        /* assert that 255 will appear */
+        for(i = 0; i < 100000; i++){
+                run_instruction(ms, 0xC0FF);
+                if(ms->registers[0] == 0xFF)
+                        break;
+        }
+        ck_assert_uint_eq(ms->registers[0], 0xFF);
+
+        /* assert that 0 will appear */
+        for(i = 0; i < 100000; i++){
+                run_instruction(ms, 0xC0FF);
+                if(ms->registers[0] == 0x00)
+                        break;
+        }
+        ck_assert_uint_eq(ms->registers[0], 0x00);
+
+        delete_mState(&ms);
+}
+END_TEST
+
 Suite *chip8_suite(void){
         Suite *s;
         TCase *tc_core;
@@ -510,6 +560,7 @@ Suite *chip8_suite(void){
         tcase_add_test(tc_ins, test_not_equal_instruction);
         tcase_add_test(tc_ins, test_i_load_immdiate_instruct);
         tcase_add_test(tc_ins, test_jump_relative_instruction);
+        tcase_add_test(tc_ins, test_rand_instruction);
         suite_add_tcase(s, tc_ins);
 
         return s;
@@ -522,6 +573,7 @@ Suite *chip8_instructions(void){
 
 
 int main(int argc, char **argv){
+        srand(time(NULL));
         Suite *s;
         SRunner *sr;
         int number_failed;

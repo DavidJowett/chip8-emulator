@@ -203,9 +203,11 @@ void run_instruction(struct mState *ms, uint16_t ins){
                 case 0xB:
                         ms->pc = ms->registers[0] + get12bit(ins);
                         break;
-                case 0xC:
-                        puts("rand()");
-                        break;
+                case 0xC:{
+                        uint8_t rID;
+                        getRegister(ins, &rID);
+                        ms->registers[rID] = (rand() % 256) & get8bit(ins);
+                        }break;
                 case 0xD:
                         puts("disp()");
                         break;
