@@ -414,6 +414,70 @@ START_TEST(test_left_shift_instruction){
 }
 END_TEST
 
+/* Test the not equal operator
+ * 0x9XY0 skips the next instruct if Vx != Vy */
+START_TEST(test_not_equal_instruction){
+        struct mState *ms;
+        ms = create_mState();
+        ck_assert_ptr_nonnull(ms);
+        ck_assert_int_eq(ms->pc, 0);
+        run_instruction(ms, 0x9010);
+        ck_assert_int_eq(ms->pc, 2);
+        ms->registers[0xA] = 1;
+        run_instruction(ms, 0x90A0);
+        ck_assert_int_eq(ms->pc, 6);
+        ms->registers[0xB] = 0x89;
+        ms->registers[0x7] = 0x89;
+        run_instruction(ms, 0x9AB0);
+        ck_assert_int_eq(ms->pc, 10);
+        run_instruction(ms, 0x9B70);
+        ck_assert_int_eq(ms->pc, 12);
+        delete_mState(&ms);
+}
+END_TEST
+
+/* Test the load immediate  into to I instruction
+ * 0xANNN sets the I registers to a 12 bit const */
+START_TEST(test_i_load_immdiate_instruct){
+        struct mState *ms;
+        ms = create_mState();
+        ck_assert_ptr_nonnull(ms);
+        ck_assert_uint_eq(ms->iRegister, 0);
+        run_instruction(ms, 0xABBB);
+        ck_assert_uint_eq(ms->iRegister, 0xBBB);
+        run_instruction(ms, 0xA000);
+        ck_assert_uint_eq(ms->iRegister, 0x000);
+        run_instruction(ms, 0xA123);
+        ck_assert_uint_eq(ms->iRegister, 0x123);
+        run_instruction(ms, 0xAEEE);
+        ck_assert_uint_eq(ms->iRegister, 0xEEE);
+
+        delete_mState(&ms);
+}
+END_TEST
+
+/* Test the jump relative instruction 
+ * 0xBNNN jump to V0 + a 12 bit const */
+START_TEST(test_jump_relative_instruction){
+        struct mState *ms;
+        ms = create_mState();
+        ck_assert_ptr_nonnull(ms);
+        ck_assert_uint_eq(ms->pc, 0);
+        run_instruction(ms, 0xB123);
+        ck_assert_uint_eq(ms->pc, 0x123);
+        run_instruction(ms, 0xB123);
+        ck_assert_uint_eq(ms->pc, 0x123);
+        ms->registers[0] = 0x81;
+        run_instruction(ms, 0xB123);
+        ck_assert_uint_eq(ms->pc, 0x1A4);
+        ms->registers[0] = 0xFF;
+        run_instruction(ms, 0xB100);
+        ck_assert_uint_eq(ms->pc, 0x1FF);
+
+        delete_mState(&ms);
+}
+END_TEST;
+
 Suite *chip8_suite(void){
         Suite *s;
         TCase *tc_core;
@@ -443,6 +507,9 @@ Suite *chip8_suite(void){
         tcase_add_test(tc_ins, test_right_shift_instruction);
         tcase_add_test(tc_ins, test_subtract_yx_instruction);
         tcase_add_test(tc_ins, test_left_shift_instruction);
+        tcase_add_test(tc_ins, test_not_equal_instruction);
+        tcase_add_test(tc_ins, test_i_load_immdiate_instruct);
+        tcase_add_test(tc_ins, test_jump_relative_instruction);
         suite_add_tcase(s, tc_ins);
 
         return s;

@@ -188,14 +188,20 @@ void run_instruction(struct mState *ms, uint16_t ins){
 
                         }
                 }break;
-                case 0x9:
-                        puts("!=");
-                        break;
+                case 0x9:{
+                        uint8_t rID1; 
+                        uint8_t rID2;
+                        get2Registers(ins, &rID1, &rID2);
+                        if(ms->registers[rID1] != ms->registers[rID2])
+                                ms->pc += 4;
+                        else
+                                ms->pc += 2;
+                        }break;
                 case 0xA:
-                        puts("I = NNN");
+                        ms->iRegister = get12bit(ins);
                         break;
                 case 0xB:
-                        puts("PC = V0+NNN");
+                        ms->pc = ms->registers[0] + get12bit(ins);
                         break;
                 case 0xC:
                         puts("rand()");
