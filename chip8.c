@@ -57,8 +57,8 @@ void delete_mState(struct mState **ms){
 }
 
 static void clear_display(struct mState *ms){
-        for(int i = 0; i < 64; i++)
-                for(int j = 0; j < 32; j++)
+        for(int i = 0; i < 32; i++)
+                for(int j = 0; j < 8; j++)
                         ms->disp[i][j] = 0;
 }
 
@@ -208,15 +208,61 @@ void run_instruction(struct mState *ms, uint16_t ins){
                         getRegister(ins, &rID);
                         ms->registers[rID] = (rand() % 256) & get8bit(ins);
                         }break;
-                case 0xD:
-                        puts("disp()");
-                        break;
-                case 0xE:{
-                        int16_t sopc = get12bit(ins);
-                        if(sopc == 0x07)
-                                puts("timer");
-                        else if(sopc == 0x0A)
-                                puts("KeyOp");
+                case 0xD:{
+                        uint8_t rID1;
+                        uint8_t rID2;
+                        uint8_t n = get4bit(ins);
+                        get2Registers(ins, &rID1, &rID2);
+                        uint8_t x = ms->registers[rID1];
+                        uint8_t y = ms->registers[rID2];
+                        //printf("n: %u y: %u x: %u\n", n, y, x);
+                        /* wrap X to fit in the screan */
+                        x = x % 64;
+                        /* wrap y to fit in the screen */
+                        y = y % 32;
+                        //printf("n: %u y: %u x: %u\n", n, y, x);
+                        for(size_t i = 0; i < n; i++){
+                                uint8_t rData = ms->mem[ms->iRegister + i];
+                                /* wrap row if the row is greater > 32 */
+                                uint8_t *row = ms->disp[(y + i) % 32];
+                                uint8_t vf = 0;
+                                /*The first byte that needs updating */
+                                uint8_t sCell = x / 8;
+                                /* The number needed to change in the next byte */
+                                uint8_t overLap = x % 8;
+                                /* The second byte that needs updating */
+                                uint8_t eCell = (x / 8) + (overLap != 0);
+
+                                //printf("sCell: %u eCell: %u, overLap: %u\n", sCell, eCell, overLap);
+                                /* Wrap sprite to the start of the line */
+                                if(eCell > 7)
+                                        eCell = 0;
+                                if(sCell == eCell){
+                                        vf = ((row[sCell] & rData) != 0);
+                                                row[sCell] ^= rData;
+                                } else {
+                                        if(row[sCell] & (rData >> overLap))
+                                                vf = 1;
+
+                                        row[sCell] ^= rData >> overLap;
+                                        if(row[eCell] & (rData << (8 - overLap)))
+                                                vf = 1;
+                                        row[eCell] ^= rData << (8 - overLap);
+                                }
+                                ms->registers[0xF] = vf;
+                        }
+                        /* TODO: render the screen */
+                        }break;
+                case 0xF:{
+                        int16_t sopc = get8bit(ins);
+                        switch(sopc){
+                                case 0x07:
+                                        puts("timer");
+                                        break;
+                                case 0x0A:
+                                        puts("KeyOp");
+                                        break;
+                        }
                 }break;
 
         }

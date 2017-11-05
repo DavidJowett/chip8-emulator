@@ -34,15 +34,15 @@ START_TEST(test_clear_insturction){
         ms = create_mState();
         ck_assert_ptr_nonnull(ms);
         run_instruction(ms, 0x00E0);
-        for(int x = 0; x < 64; x++)
-                for(int y = 0; y < 32; y++)
-                        ck_assert_uint_eq(ms->disp[x][y], 0x0);
-        for(int x = 0; x < 64; x++)
-                for(int y = 0; y < 32; y++)
+        for(size_t y = 0; y < 32; y++)
+                for(size_t x = 0; x < 8; x++)
+                        ck_assert_uint_eq(ms->disp[y][x], 0x0);
+        for(size_t y = 0; y < 32; y++)
+                for(size_t x = 0; x < 8; x++)
                         ms->disp[x][y] = 1;
         run_instruction(ms, 0x00E0);
-        for(int x = 0; x < 64; x++)
-                for(int y = 0; y < 32; y++)
+        for(int x = 0; x < 8; x++)
+                for(int y = 0; y < 4; y++)
                         ck_assert_uint_eq(ms->disp[x][y], 0x0);
         delete_mState(&ms);
 }
@@ -502,10 +502,12 @@ START_TEST(test_rand_instruction){
                 ck_assert_uint_le(ms->registers[0], 1);
                 sum += ms->registers[0];
         }
-        /* Assert that the number of 1s is within 2% of the expected value of
-         * 500 */
-        ck_assert_uint_le(sum, 5100);
-        ck_assert_uint_ge(sum, 4900);
+        /* Assert that the number of 1s is within 4% of the expected value of
+         * 500 
+         * This should likely never fail if it does it should pass the next
+         * time*/
+        ck_assert_uint_le(sum, 5200);
+        ck_assert_uint_ge(sum, 4800);
 
         /* check the extreme values */
         /* assert that 255 will appear */
@@ -523,6 +525,120 @@ START_TEST(test_rand_instruction){
                         break;
         }
         ck_assert_uint_eq(ms->registers[0], 0x00);
+
+        delete_mState(&ms);
+}
+END_TEST
+
+/* Test the draw instruction 
+ * 0xDXYN draws an 8 by N sprite at (X, Y), the pixles in the sprite are xor'd
+ * with the pixels on the screen. If any pixels go from 1 to 0 Vf is  set to 1.
+ * Otherwise Vf is set to 0.
+ */
+START_TEST(test_draw_instruction){
+        struct mState *ms;
+        ms = create_mState();
+        ck_assert_ptr_nonnull(ms);
+        /* check that one line is drawn correctly */
+        ms->mem[0] = 0b11111111;
+        ms->registers[0] = 0x0;
+        ms->registers[1] = 0x0;
+        ms->iRegister = 0;
+        run_instruction(ms, 0xD011);
+        ck_assert_uint_eq(ms->disp[0][0], 0b11111111);
+        ck_assert_uint_eq(ms->registers[0xF], 0);
+
+        /* check that two lines are drawn correctly */
+        ms->mem[1] = 0b10101010;
+        ms->mem[2] = 0b10101010;
+        ms->iRegister = 1;
+        ms->registers[0] = 0;
+        ms->registers[1] = 1;
+        run_instruction(ms, 0xD012);
+        ck_assert_uint_eq(ms->disp[1][0], 0b10101010);
+        ck_assert_uint_eq(ms->disp[2][0], 0b10101010);
+        ck_assert_uint_eq(ms->registers[0xF], 0);
+
+        /* check that pixels are XOR'd */
+        ms->mem[1] = 0b10101010;
+        ms->mem[2] = 0b10101010;
+        ms->iRegister = 1;
+        ms->registers[0] = 0;
+        ms->registers[1] = 1;
+        run_instruction(ms, 0xD012);
+        ck_assert_uint_eq(ms->disp[1][0], 0b00000000);
+        ck_assert_uint_eq(ms->disp[2][0], 0b00000000);
+        ck_assert_uint_eq(ms->registers[0xF], 1);
+
+        /* test sprites that overlap byte bounds */
+        ms->mem[3] = 0b11111111;
+        ms->mem[4] = 0b11111111;
+        ms->iRegister = 3;
+        ms->registers[0] = 4;
+        ms->registers[1] = 4;
+        run_instruction(ms, 0xD012);
+        ck_assert_uint_eq(ms->disp[4][0], 0b00001111);
+        ck_assert_uint_eq(ms->disp[4][1], 0b11110000);
+        ck_assert_uint_eq(ms->disp[5][0], 0b00001111);
+        ck_assert_uint_eq(ms->disp[5][1], 0b11110000);
+        ck_assert_uint_eq(ms->registers[0xF], 0);
+
+        /* test line wraping works */
+        ms->mem[0x0EE] = 0b11111111;
+        ms->mem[0x0EF] = 0b11111111;
+        ms->iRegister = 0x0EE;
+        ms->registers[0] = 60;
+        ms->registers[1] = 8;
+        run_instruction(ms, 0xD012);
+        ck_assert_uint_eq(ms->disp[8][7], 0b00001111);
+        ck_assert_uint_eq(ms->disp[8][0], 0b11110000);
+        ck_assert_uint_eq(ms->disp[9][7], 0b00001111);
+        ck_assert_uint_eq(ms->disp[9][0], 0b11110000);
+        ck_assert_uint_eq(ms->registers[0xF], 0);
+
+        /* test that x and y values out side the screen are wrapped to fit */
+        ms->mem[0x099] = 0b11001100;
+        ms->mem[0x09A] = 0b11001100;
+        ms->iRegister = 0x099;
+        /* X should become 130 - (64 * 2) = 2 */
+        ms->registers[0] = 130;
+        /* Y should become 74 - (32 * 2) = 10 */
+        ms->registers[1] = 74;
+        run_instruction(ms, 0xD012);
+        ck_assert_uint_eq(ms->disp[10][0], 0b00110011);
+        ck_assert_uint_eq(ms->disp[10][1], 0b00000000);
+        ck_assert_uint_eq(ms->disp[11][0], 0b00110011);
+        ck_assert_uint_eq(ms->disp[11][1], 0b00000000);
+        ck_assert_uint_eq(ms->registers[0xF], 0);
+
+        /* test sprites that overlap byte bounds with odd number overlap */
+        ms->mem[3] = 0b11111111;
+        ms->mem[4] = 0b11111111;
+        ms->iRegister = 3;
+        ms->registers[0] = 7;
+        ms->registers[1] = 28;
+        run_instruction(ms, 0xD012);
+        ck_assert_uint_eq(ms->disp[28][0], 0b00000001);
+        ck_assert_uint_eq(ms->disp[28][1], 0b11111110);
+        ck_assert_uint_eq(ms->disp[29][0], 0b00000001);
+        ck_assert_uint_eq(ms->disp[29][1], 0b11111110);
+        ck_assert_uint_eq(ms->registers[0xF], 0);
+        
+        /* clear the display */
+        run_instruction(ms, 0x00E0);
+
+        /* test row wrap around */
+        ms->mem[3] = 0b11111111;
+        ms->mem[4] = 0b11111111;
+        ms->iRegister = 3;
+        ms->registers[0] = 7;
+        ms->registers[1] = 31;
+        run_instruction(ms, 0xD012);
+        ck_assert_uint_eq(ms->disp[31][0], 0b00000001);
+        ck_assert_uint_eq(ms->disp[31][1], 0b11111110);
+        ck_assert_uint_eq(ms->disp[0][0], 0b00000001);
+        ck_assert_uint_eq(ms->disp[0][1], 0b11111110);
+        ck_assert_uint_eq(ms->registers[0xF], 0);
 
         delete_mState(&ms);
 }
@@ -561,6 +677,7 @@ Suite *chip8_suite(void){
         tcase_add_test(tc_ins, test_i_load_immdiate_instruct);
         tcase_add_test(tc_ins, test_jump_relative_instruction);
         tcase_add_test(tc_ins, test_rand_instruction);
+        tcase_add_test(tc_ins, test_draw_instruction);
         suite_add_tcase(s, tc_ins);
 
         return s;

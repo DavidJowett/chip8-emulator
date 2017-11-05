@@ -8,9 +8,10 @@ struct mState {
         uint16_t iRegister;
         int16_t pc;
         int16_t *stack;
-        int8_t disp[64][32];
+        uint8_t disp[32][8];
         size_t stackSize;
         size_t stackCapacity;
+        uint8_t mem[4096];
 };
 
 struct runtime_error {
