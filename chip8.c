@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdint.h>
+#include <time.h>
 #include "chip8.h"
 
 
@@ -30,6 +31,20 @@ static inline void get2Registers(int16_t ins, uint8_t *reg1, uint8_t *reg2){
 
 }
 
+static void *timerThread(void *data){
+        struct mState *ms = (struct mState *) data;
+        struct timespec ts, ts2;
+        ts.tv_nsec = 166666667;
+        while(0){
+                pthread_mutex_lock(&ms->timerMutex);
+                if(ms->dTimer != 0) ms->dTimer--;
+                if(ms->sTimer != 0) ms->sTimer--;
+                pthread_mutex_unlock(&ms->timerMutex);
+                nanosleep(&ts, &ts2);
+        }
+        pthread_exit(NULL);
+}
+
 struct mState *create_mState(void){
         struct mState *ms = malloc(sizeof(struct mState));
         if(ms == NULL) return NULL;
@@ -42,6 +57,9 @@ struct mState *create_mState(void){
         for(int i = 0; i < 16; i++)
                 ms->registers[i] = 0;
         clear_display(ms);
+
+        /* Setup mutexs and threads */
+        pthread_mutex_init(&ms->timerMutex, NULL);
 
         return ms;
 
@@ -253,6 +271,16 @@ void run_instruction(struct mState *ms, uint16_t ins){
                         }
                         /* TODO: render the screen */
                         }break;
+                case 0xE:{
+                        int16_t sopc = get8bit(ins);
+                        switch(sopc){
+                                case 0x9E:
+                                        break;
+                                case 0xA1:
+                                        break;
+                        }
+
+                        } break;
                 case 0xF:{
                         int16_t sopc = get8bit(ins);
                         switch(sopc){
@@ -263,7 +291,15 @@ void run_instruction(struct mState *ms, uint16_t ins){
                                         puts("KeyOp");
                                         break;
                         }
-                }break;
+                        }break;
 
         }
+}
+
+void chip8_run(struct mState *ms){
+        pthread_create(&ms->tThread, NULL, timerThread, ((void *) ms));
+}
+
+void chip8_halt(struct mState *ms){
+        pthread_cancel(ms->tThread);
 }
