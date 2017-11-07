@@ -14,10 +14,15 @@ struct mState {
         size_t stackCapacity;
         uint8_t mem[4096];
 
-        /* The timers */
+        uint8_t keys[16];
+
+        /* Timers */
         uint8_t dTimer;
         uint8_t sTimer;
+
+        /* Mutexs */
         pthread_mutex_t timerMutex;
+        pthread_mutex_t keyMutex;
         /* The timer thread */
         pthread_t tThread;
 };

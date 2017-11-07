@@ -58,8 +58,14 @@ struct mState *create_mState(void){
                 ms->registers[i] = 0;
         clear_display(ms);
 
-        /* Setup mutexs and threads */
+        /* Zero the key state */
+        for(size_t i = 0; i < 16; i++){
+                ms->keys[i] = 0;
+        }
+
+        /* Setup mutexs */
         pthread_mutex_init(&ms->timerMutex, NULL);
+        pthread_mutex_init(&ms->keyMutex, NULL);
 
         return ms;
 
@@ -273,22 +279,46 @@ void run_instruction(struct mState *ms, uint16_t ins){
                         }break;
                 case 0xE:{
                         int16_t sopc = get8bit(ins);
+                        uint8_t rID;
+                        getRegister(ins, &rID);
                         switch(sopc){
                                 case 0x9E:
+                                        if(ms->keys[ms->registers[rID]])
+                                                ms->pc += 4;
+                                        else
+                                                ms->pc += 2;
                                         break;
                                 case 0xA1:
+                                        if(!ms->keys[ms->registers[rID]])
+                                                ms->pc += 4;
+                                        else
+                                                ms->pc += 2;
                                         break;
                         }
 
                         } break;
                 case 0xF:{
                         int16_t sopc = get8bit(ins);
+                        uint8_t rID;
+                        getRegister(ins, &rID);
                         switch(sopc){
                                 case 0x07:
-                                        puts("timer");
+                                        pthread_mutex_lock(&ms->timerMutex);
+                                        ms->registers[rID] = ms->dTimer;
+                                        pthread_mutex_unlock(&ms->timerMutex);
                                         break;
                                 case 0x0A:
                                         puts("KeyOp");
+                                        break;
+                                case 0x15:
+                                        pthread_mutex_lock(&ms->timerMutex);
+                                        ms->dTimer = ms->registers[rID];
+                                        pthread_mutex_unlock(&ms->timerMutex);
+                                        break;
+                                case 0x18:
+                                        pthread_mutex_lock(&ms->timerMutex);
+                                        ms->sTimer = ms->registers[rID];
+                                        pthread_mutex_unlock(&ms->timerMutex);
                                         break;
                         }
                         }break;

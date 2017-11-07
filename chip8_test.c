@@ -644,6 +644,149 @@ START_TEST(test_draw_instruction){
 }
 END_TEST
 
+/* Test the is key press instruction 
+ * 0xEX9E check if the keycode in X is currently pressed. If the key is pressed,
+ * the next instructions is skipped */
+START_TEST(test_key_press_instruction){
+        struct mState *ms;
+        ms = create_mState();
+        ck_assert_ptr_nonnull(ms);
+        ck_assert_int_eq(ms->pc, 0x0);
+
+        ms->keys[0xF] = 1;
+        ms->registers[0x0] = 0xF;
+        run_instruction(ms, 0xE09E);
+        ck_assert_int_eq(ms->pc, 4);
+
+        ms->registers[0xA] = 0;
+        run_instruction(ms, 0xEA9E);
+        ck_assert_int_eq(ms->pc, 6);
+
+        ms->keys[0xB] = 1;
+        ms->registers[0x7] = 0xC;
+        run_instruction(ms, 0xE79E);
+        ck_assert_int_eq(ms->pc, 8);
+
+        ms->keys[0xC] = 1;
+        run_instruction(ms, 0xE79E);
+        ck_assert_int_eq(ms->pc, 12);
+
+        delete_mState(&ms);
+}
+END_TEST;
+
+/* Test the is key not press instruction 
+ * 0xEX9E check if the keycode in X is currently pressed. If the key is not  pressed,
+ * the next instructions is skipped */
+START_TEST(test_key_not_press_instruction){
+        struct mState *ms;
+        ms = create_mState();
+        ck_assert_ptr_nonnull(ms);
+        ck_assert_int_eq(ms->pc, 0x0);
+
+        ms->keys[0xF] = 1;
+        ms->registers[0] = 0xF;
+        run_instruction(ms, 0xE0A1);
+        ck_assert_int_eq(ms->pc, 2);
+
+        ms->registers[0xA] = 0;
+        run_instruction(ms, 0xEAA1);
+        ck_assert_int_eq(ms->pc, 6);
+
+        ms->keys[0xB] = 1;
+        ms->registers[0x7] = 0xC;
+        run_instruction(ms, 0xE7A1);
+        ck_assert_int_eq(ms->pc, 10);
+
+        ms->keys[0xC] = 1;
+        run_instruction(ms, 0xE7A1);
+        ck_assert_int_eq(ms->pc, 12);
+
+        delete_mState(&ms);
+}
+END_TEST;
+
+/* Test the get delay timer instruction
+ * 0xFX07 should set Vx to the delay timer's currenty value */
+START_TEST(test_get_timer_instruction){
+        struct mState *ms;
+        ms = create_mState();
+        ck_assert_ptr_nonnull(ms);
+
+        ms->dTimer = 0xBC;
+        run_instruction(ms, 0xF007);
+        ck_assert_uint_eq(ms->registers[0x0], 0xBC);
+
+        ms->dTimer = 0x9C;
+        run_instruction(ms, 0xF107);
+        ck_assert_uint_eq(ms->registers[0x1], 0x9C);
+
+        ms->dTimer = 0x00;
+        run_instruction(ms, 0xFA07);
+        ck_assert_uint_eq(ms->registers[0xA], 0x00);
+
+        ms->dTimer = 0xFF;
+        run_instruction(ms, 0xFF07);
+        ck_assert_uint_eq(ms->registers[0xF], 0xFF);
+
+        delete_mState(&ms);
+}
+END_TEST
+
+/* Test the set delay timer instruction 
+ * 0xFX15 should the delay timer to the value in Vx */
+START_TEST(test_set_delay_timer_instruction){
+        struct mState *ms;
+        ms = create_mState();
+        ck_assert_ptr_nonnull(ms);
+
+        ms->registers[0x0] = 0xBC;
+        run_instruction(ms, 0xF015);
+        ck_assert_uint_eq(ms->dTimer, 0xBC);
+
+        ms->registers[0x2] = 0x12;
+        run_instruction(ms, 0xF215);
+        ck_assert_uint_eq(ms->dTimer, 0x12);
+        
+        ms->registers[0xF] = 0x99;
+        run_instruction(ms, 0xFF15);
+        ck_assert_uint_eq(ms->dTimer, 0x99);
+       
+        ms->registers[0x5] = 0x88;
+        run_instruction(ms, 0xF515);
+        ck_assert_uint_eq(ms->dTimer, 0x88);
+        
+        delete_mState(&ms);
+}
+END_TEST
+
+/* Test the set sound timer instruction 
+ * 0xFX18 should the sound timer to the value in Vx */
+START_TEST(test_set_sound_timer_instruction){
+        struct mState *ms;
+        ms = create_mState();
+        ck_assert_ptr_nonnull(ms);
+
+        ms->registers[0x0] = 0xBC;
+        run_instruction(ms, 0xF018);
+        ck_assert_uint_eq(ms->sTimer, 0xBC);
+
+        ms->registers[0x2] = 0x12;
+        run_instruction(ms, 0xF218);
+        ck_assert_uint_eq(ms->sTimer, 0x12);
+        
+        ms->registers[0xF] = 0x99;
+        run_instruction(ms, 0xFF18);
+        ck_assert_uint_eq(ms->sTimer, 0x99);
+       
+        ms->registers[0x5] = 0x88;
+        run_instruction(ms, 0xF518);
+        ck_assert_uint_eq(ms->sTimer, 0x88);
+        
+        delete_mState(&ms);
+}
+END_TEST
+
 Suite *chip8_suite(void){
         Suite *s;
         TCase *tc_core;
@@ -678,14 +821,14 @@ Suite *chip8_suite(void){
         tcase_add_test(tc_ins, test_jump_relative_instruction);
         tcase_add_test(tc_ins, test_rand_instruction);
         tcase_add_test(tc_ins, test_draw_instruction);
+        tcase_add_test(tc_ins, test_key_press_instruction);
+        tcase_add_test(tc_ins, test_key_not_press_instruction);
+        tcase_add_test(tc_ins, test_get_timer_instruction);
+        tcase_add_test(tc_ins, test_set_delay_timer_instruction);
+        tcase_add_test(tc_ins, test_set_sound_timer_instruction);
         suite_add_tcase(s, tc_ins);
 
         return s;
-}
-
-Suite *chip8_instructions(void){
-
-
 }
 
 
