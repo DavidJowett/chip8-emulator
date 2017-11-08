@@ -8,7 +8,7 @@ test: ${OBJECTS} ${TOBJECTS}
 	gcc -o test ${OBJECTS} ${TOBJECTS} -lcheck -lpthread
 
 %.o: %.c
-	gcc -c $< -o $@
+	gcc -g -Wall -c $< -o $@
 
 clean:
 	rm -f test chip8 ${OBJECTS} ${MOBJECTS} ${TOBJECTS}

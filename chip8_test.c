@@ -2,36 +2,126 @@
 #include <time.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <unistd.h>
 #include "chip8.h"
 
 
-START_TEST(test_mState_create){
+START_TEST(test_chip8_init){
         struct mState *ms;
-        ms = create_mState();
+        ms = chip8_init();
         ck_assert_ptr_nonnull(ms);
         ck_assert_int_eq(ms->stackSize, 0);
         ck_assert_int_eq(ms->pc, 0);
         ck_assert_int_eq(ms->iRegister, 0);
         for(int i = 0; i < 16; i++)
                 ck_assert_int_eq(ms->registers[1], 0);
-        delete_mState(&ms);
+        chip8_destroy(&ms);
 }
 END_TEST
 
-START_TEST(test_mState_delete){
+START_TEST(test_chip8_destroy){
         struct mState *ms;
-        ms = create_mState();
+        ms = chip8_init();
         ck_assert_ptr_nonnull(ms);
-        delete_mState(&ms);
+        chip8_destroy(&ms);
         ck_assert_ptr_null(ms);
+}
+END_TEST
+
+START_TEST(test_chip8_run){
+        struct mState *ms;
+        ms = chip8_init();
+        ck_assert_ptr_nonnull(ms);
+        /* Set V0 to BB */
+        ms->mem[0x400] = 0x60;
+        ms->mem[0x401] = 0xBB;
+        /* Set Vf to BC */
+        ms->mem[0x402] = 0x6F;
+        ms->mem[0x403] = 0xBC;
+        /* loop */
+        ms->mem[0x404] = 0x14;
+        ms->mem[0x405] = 0x04;
+        
+        ms->pc = 0x400;
+        chip8_run(ms);
+
+        sleep(4);
+
+        chip8_halt(ms);
+
+        ck_assert_uint_eq(ms->registers[0x0], 0xBB);
+        ck_assert_uint_eq(ms->registers[0xf], 0xBc);
+        ck_assert_uint_eq(ms->pc, 0x404);
+        printf("%lu instructions in 4 seconds. %f instructions per a second\n", ms->count, ((double) ms->count) / 4.0);
+
+        chip8_destroy(&ms);
+}
+END_TEST
+
+START_TEST(test_chip8_timers){
+        struct mState *ms;
+        ms = chip8_init();
+        ck_assert_ptr_nonnull(ms);
+        ms->registers[0x0] = 0xFF;
+        ms->mem[0x400] = 0xF0;
+        ms->mem[0x401] = 0x15;
+        ms->mem[0x402] = 0xF0;
+        ms->mem[0x403] = 0x18;
+        ms->mem[0x404] = 0x14;
+        ms->mem[0x405] = 0x04;
+
+        ms->pc = 0x400;
+
+        chip8_run(ms);
+
+        sleep(5);
+
+        chip8_halt(ms);
+
+        ck_assert_uint_eq(ms->sTimer, 0);
+        ck_assert_uint_eq(ms->dTimer, 0);
+
+        /* Set dTimer to 250 */
+        ms->registers[0x0] = 0xFF;
+        ms->mem[0x400] = 0xF0;
+        ms->mem[0x401] = 0x15;
+        /* Set sTimer to 250 */
+        ms->mem[0x402] = 0xF0;
+        ms->mem[0x403] = 0x18;
+        /* loop */
+        ms->mem[0x404] = 0x14;
+        ms->mem[0x405] = 0x04;
+        
+        ms->pc = 0x400;
+       
+        uint8_t sSTime, sDTime, eSTime, eDTime;
+        struct timespec ts, ts2;
+        ts.tv_nsec = 0;
+        ts.tv_sec = 1;
+
+        /* start the chip */
+        chip8_run(ms);
+
+        nanosleep(&ts, &ts2);
+        sSTime = ms->sTimer;
+        sDTime = ms->dTimer;
+        nanosleep(&ts, &ts2);
+        eSTime = ms->sTimer;
+        eDTime = ms->dTimer;
+
+        chip8_halt(ms);
+        ck_assert_uint_eq(sSTime - 60, eSTime);
+        ck_assert_uint_eq(sDTime - 60, eDTime);
+
+        chip8_destroy(&ms);
 }
 END_TEST
 
 /* Test clear display instruction:
  * 0x0E0 clears the display */
-START_TEST(test_clear_insturction){
+START_TEST(test_clear_instruction){
         struct mState *ms;
-        ms = create_mState();
+        ms = chip8_init();
         ck_assert_ptr_nonnull(ms);
         run_instruction(ms, 0x00E0);
         for(size_t y = 0; y < 32; y++)
@@ -44,20 +134,20 @@ START_TEST(test_clear_insturction){
         for(int x = 0; x < 8; x++)
                 for(int y = 0; y < 4; y++)
                         ck_assert_uint_eq(ms->disp[x][y], 0x0);
-        delete_mState(&ms);
+        chip8_destroy(&ms);
 }
 END_TEST
 
 START_TEST(test_return_instruction){
         struct mState *ms;
-        ms = create_mState();
+        ms = chip8_init();
         ms->stack[0] = 0x1212;
         ms->stackSize = 1;
         ck_assert_int_eq(ms->pc, 0);
         run_instruction(ms, 0x00EE);
         ck_assert_int_eq(ms->pc, 0x1212);
         ck_assert_int_eq(ms->stackSize, 0);
-        delete_mState(&ms);
+        chip8_destroy(&ms);
 }
 END_TEST
 
@@ -65,7 +155,7 @@ END_TEST
  * 0x1NNN jump to 12 bit immediate value */
 START_TEST(test_jump_instruction){
         struct mState *ms;
-        ms = create_mState();
+        ms = chip8_init();
         ck_assert_ptr_nonnull(ms);
         ck_assert_int_eq(ms->pc, 0);
         run_instruction(ms, 0x1456);
@@ -79,20 +169,20 @@ END_TEST
 
 START_TEST(test_subroutine_call_instruction){
         struct mState *ms;
-        ms = create_mState();
+        ms = chip8_init();
         ck_assert_ptr_nonnull(ms);
         ck_assert_int_eq(ms->pc, 0);
         run_instruction(ms, 0x2123);
         ck_assert_int_eq(ms->pc, 0x123);
         ck_assert_int_eq(ms->stackSize, 1);
         ck_assert_int_eq(ms->stack[0], 0x2);
-        delete_mState(&ms);
+        chip8_destroy(&ms);
 }
 END_TEST
 
 START_TEST(test_equal_immediate){
         struct mState *ms;
-        ms = create_mState();
+        ms = chip8_init();
         ck_assert_ptr_nonnull(ms);
         ck_assert_int_eq(ms->pc, 0);
         run_instruction(ms, 0x3000);
@@ -104,13 +194,13 @@ START_TEST(test_equal_immediate){
         ck_assert_uint_eq(ms->pc, 10);
         run_instruction(ms, 0x3772);
         ck_assert_uint_eq(ms->pc, 12);
-        delete_mState(&ms);
+        chip8_destroy(&ms);
 }
 END_TEST
 
 START_TEST(test_not_equal_immediate){
         struct mState *ms;
-        ms = create_mState();
+        ms = chip8_init();
         ck_assert_ptr_nonnull(ms);
         ck_assert_int_eq(ms->pc, 0);
         run_instruction(ms, 0x4000);
@@ -122,13 +212,13 @@ START_TEST(test_not_equal_immediate){
         ck_assert_int_eq(ms->pc, 8);
         run_instruction(ms, 0x4890);
         ck_assert_int_eq(ms->pc, 12);
-        delete_mState(&ms);
+        chip8_destroy(&ms);
 }
 END_TEST
 
 START_TEST(test_equal){
         struct mState *ms;
-        ms = create_mState();
+        ms = chip8_init();
         ck_assert_ptr_nonnull(ms);
         ck_assert_int_eq(ms->pc, 0);
         run_instruction(ms, 0x5010);
@@ -142,13 +232,13 @@ START_TEST(test_equal){
         ck_assert_int_eq(ms->pc, 8);
         run_instruction(ms, 0x5B70);
         ck_assert_int_eq(ms->pc, 12);
-        delete_mState(&ms);
+        chip8_destroy(&ms);
 }
 END_TEST
 
 START_TEST(test_load_immediate_instruction){
         struct mState *ms;
-        ms = create_mState();
+        ms = chip8_init();
         ck_assert_ptr_nonnull(ms);
         run_instruction(ms, 0x6AFF);
         ck_assert_uint_eq(ms->registers[0xA], 0xFF);
@@ -158,13 +248,13 @@ START_TEST(test_load_immediate_instruction){
         ck_assert_uint_eq(ms->registers[0x1], 0x11);
         run_instruction(ms, 0x6099);
         ck_assert_uint_eq(ms->registers[0x0], 0x99);
-        delete_mState(&ms);
+        chip8_destroy(&ms);
 }
 END_TEST
 
 START_TEST(test_add_immediate_instruction){
         struct mState *ms;
-        ms = create_mState();
+        ms = chip8_init();
         ck_assert_ptr_nonnull(ms);
         run_instruction(ms, 0x7011);
         ck_assert_uint_eq(ms->registers[0x0], 0x11);
@@ -174,13 +264,13 @@ START_TEST(test_add_immediate_instruction){
         ck_assert_uint_eq(ms->registers[0xA], 0x13);
         run_instruction(ms, 0x7A0F);
         ck_assert_uint_eq(ms->registers[0xA], 0x22);
-        delete_mState(&ms);
+        chip8_destroy(&ms);
 }
 END_TEST
 
 START_TEST(test_move_instruction){
         struct mState *ms;
-        ms = create_mState();
+        ms = chip8_init();
         ck_assert_ptr_nonnull(ms);
         ms->registers[0x0] = 0x99;
         run_instruction(ms, 0x8A00);
@@ -191,13 +281,13 @@ START_TEST(test_move_instruction){
         ck_assert_uint_eq(ms->registers[0xD], 0x99);
         run_instruction(ms, 0x8A00);
         ck_assert_uint_eq(ms->registers[0xA], 0x00);
-        delete_mState(&ms);
+        chip8_destroy(&ms);
 }
 END_TEST
 
 START_TEST(test_or_instruction){
         struct mState *ms;
-        ms = create_mState();
+        ms = chip8_init();
         ck_assert_ptr_nonnull(ms);
         ms->registers[0x0] = 0x99;
         run_instruction(ms, 0x8101);
@@ -213,13 +303,13 @@ START_TEST(test_or_instruction){
         ms->registers[0x9] = 0xF7;
         run_instruction(ms, 0x8991);
         ck_assert_uint_eq(ms->registers[0x9], 0xF7);
-        delete_mState(&ms);
+        chip8_destroy(&ms);
 }
 END_TEST
 
 START_TEST(test_and_instruction){
         struct mState *ms;
-        ms = create_mState();
+        ms = chip8_init();
         ck_assert_ptr_nonnull(ms);
         ms->registers[0x0] = 0xF8;
         run_instruction(ms, 0x8102);
@@ -234,13 +324,13 @@ START_TEST(test_and_instruction){
         ms->registers[0x4] = 0x11;
         run_instruction(ms, 0x8542);
         ck_assert_uint_eq(ms->registers[0x5], 0x11);
-        delete_mState(&ms);
+        chip8_destroy(&ms);
 }
 END_TEST
 
 START_TEST(test_xor_instruction){
         struct mState *ms;
-        ms = create_mState();
+        ms = chip8_init();
         ck_assert_ptr_nonnull(ms);
         ms->registers[0x0] = 0x11;
         run_instruction(ms, 0x8103);
@@ -250,13 +340,13 @@ START_TEST(test_xor_instruction){
         run_instruction(ms, 0x8323);
         ck_assert_uint_eq(ms->registers[0x3], 0x00);
 
-        delete_mState(&ms);
+        chip8_destroy(&ms);
 }
 END_TEST
 
 START_TEST(test_add_instruction){
         struct mState *ms;
-        ms = create_mState();
+        ms = chip8_init();
         ck_assert_ptr_nonnull(ms);
         /* check that addition works and that Rf is set to 0 when no integer
          * role over occurs */
@@ -274,14 +364,14 @@ START_TEST(test_add_instruction){
         ck_assert_uint_eq(ms->registers[0xA], 0xFE);
         ck_assert_uint_eq(ms->registers[0xF], 0x01);
 
-        delete_mState(&ms);
+        chip8_destroy(&ms);
 }
 END_TEST
 
 /* Test the 0x8XY5 instruction */
 START_TEST(test_subtract_instruction){
         struct mState *ms;
-        ms = create_mState();
+        ms = chip8_init();
         ck_assert_ptr_nonnull(ms);
         /* check that subtraction works and that Rf is set to 1 when no carry
          * occurs */
@@ -300,7 +390,7 @@ START_TEST(test_subtract_instruction){
         ck_assert_uint_eq(ms->registers[0x5], 0xB0);
         ck_assert_uint_eq(ms->registers[0xF], 0x00);
 
-        delete_mState(&ms);
+        chip8_destroy(&ms);
 }
 END_TEST
 
@@ -309,7 +399,7 @@ END_TEST
  * significant bit of Vy from before the shift */ 
 START_TEST(test_right_shift_instruction){
         struct mState *ms;
-        ms = create_mState();
+        ms = chip8_init();
         ck_assert_ptr_nonnull(ms);
 
         /* check the Vy is shifted to the right, that Vx is set to Vy after the
@@ -338,7 +428,7 @@ START_TEST(test_right_shift_instruction){
         ck_assert_uint_eq(ms->registers[0x4], 0x7F);
         ck_assert_uint_eq(ms->registers[0xF], 0x1);
 
-        delete_mState(&ms);
+        chip8_destroy(&ms);
 }
 END_TEST
 
@@ -347,7 +437,7 @@ END_TEST
  * there is not carry */
 START_TEST(test_subtract_yx_instruction){
         struct mState *ms;
-        ms = create_mState();
+        ms = chip8_init();
         ck_assert_ptr_nonnull(ms);
         /* check that subtraction works and that Rf is set to 1 when no carry
          * occurs */
@@ -366,7 +456,7 @@ START_TEST(test_subtract_yx_instruction){
         ck_assert_uint_eq(ms->registers[0x5], 0xB0);
         ck_assert_uint_eq(ms->registers[0xF], 0x00);
 
-        delete_mState(&ms);
+        chip8_destroy(&ms);
 
 }
 END_TEST
@@ -376,7 +466,7 @@ END_TEST
  * most significant bit of Vy from before the shift */ 
 START_TEST(test_left_shift_instruction){
         struct mState *ms;
-        ms = create_mState();
+        ms = chip8_init();
         ck_assert_ptr_nonnull(ms);
 
         /* check the Vy is shifted to the left, that Vx is set to Vy after the
@@ -413,7 +503,7 @@ START_TEST(test_left_shift_instruction){
         ck_assert_uint_eq(ms->registers[0x4], 0x00);
         ck_assert_uint_eq(ms->registers[0xF], 0x1);
 
-        delete_mState(&ms);
+        chip8_destroy(&ms);
 }
 END_TEST
 
@@ -421,7 +511,7 @@ END_TEST
  * 0x9XY0 skips the next instruct if Vx != Vy */
 START_TEST(test_not_equal_instruction){
         struct mState *ms;
-        ms = create_mState();
+        ms = chip8_init();
         ck_assert_ptr_nonnull(ms);
         ck_assert_int_eq(ms->pc, 0);
         run_instruction(ms, 0x9010);
@@ -435,7 +525,7 @@ START_TEST(test_not_equal_instruction){
         ck_assert_int_eq(ms->pc, 10);
         run_instruction(ms, 0x9B70);
         ck_assert_int_eq(ms->pc, 12);
-        delete_mState(&ms);
+        chip8_destroy(&ms);
 }
 END_TEST
 
@@ -443,7 +533,7 @@ END_TEST
  * 0xANNN sets the I registers to a 12 bit const */
 START_TEST(test_i_load_immdiate_instruct){
         struct mState *ms;
-        ms = create_mState();
+        ms = chip8_init();
         ck_assert_ptr_nonnull(ms);
         ck_assert_uint_eq(ms->iRegister, 0);
         run_instruction(ms, 0xABBB);
@@ -455,7 +545,7 @@ START_TEST(test_i_load_immdiate_instruct){
         run_instruction(ms, 0xAEEE);
         ck_assert_uint_eq(ms->iRegister, 0xEEE);
 
-        delete_mState(&ms);
+        chip8_destroy(&ms);
 }
 END_TEST
 
@@ -463,7 +553,7 @@ END_TEST
  * 0xBNNN jump to V0 + a 12 bit const */
 START_TEST(test_jump_relative_instruction){
         struct mState *ms;
-        ms = create_mState();
+        ms = chip8_init();
         ck_assert_ptr_nonnull(ms);
         ck_assert_uint_eq(ms->pc, 0);
         run_instruction(ms, 0xB123);
@@ -477,7 +567,7 @@ START_TEST(test_jump_relative_instruction){
         run_instruction(ms, 0xB100);
         ck_assert_uint_eq(ms->pc, 0x1FF);
 
-        delete_mState(&ms);
+        chip8_destroy(&ms);
 }
 END_TEST;
 
@@ -487,7 +577,7 @@ END_TEST;
  * Vx = (rand() % 256) & NN); */
 START_TEST(test_rand_instruction){
         struct mState *ms;
-        ms = create_mState();
+        ms = chip8_init();
         ck_assert_ptr_nonnull(ms);
         /* Anding with zero should always generate 0 */
         run_instruction(ms, 0xC000);
@@ -526,7 +616,7 @@ START_TEST(test_rand_instruction){
         }
         ck_assert_uint_eq(ms->registers[0], 0x00);
 
-        delete_mState(&ms);
+        chip8_destroy(&ms);
 }
 END_TEST
 
@@ -537,7 +627,7 @@ END_TEST
  */
 START_TEST(test_draw_instruction){
         struct mState *ms;
-        ms = create_mState();
+        ms = chip8_init();
         ck_assert_ptr_nonnull(ms);
         /* check that one line is drawn correctly */
         ms->mem[0] = 0b11111111;
@@ -640,7 +730,7 @@ START_TEST(test_draw_instruction){
         ck_assert_uint_eq(ms->disp[0][1], 0b11111110);
         ck_assert_uint_eq(ms->registers[0xF], 0);
 
-        delete_mState(&ms);
+        chip8_destroy(&ms);
 }
 END_TEST
 
@@ -649,7 +739,7 @@ END_TEST
  * the next instructions is skipped */
 START_TEST(test_key_press_instruction){
         struct mState *ms;
-        ms = create_mState();
+        ms = chip8_init();
         ck_assert_ptr_nonnull(ms);
         ck_assert_int_eq(ms->pc, 0x0);
 
@@ -671,7 +761,7 @@ START_TEST(test_key_press_instruction){
         run_instruction(ms, 0xE79E);
         ck_assert_int_eq(ms->pc, 12);
 
-        delete_mState(&ms);
+        chip8_destroy(&ms);
 }
 END_TEST;
 
@@ -680,7 +770,7 @@ END_TEST;
  * the next instructions is skipped */
 START_TEST(test_key_not_press_instruction){
         struct mState *ms;
-        ms = create_mState();
+        ms = chip8_init();
         ck_assert_ptr_nonnull(ms);
         ck_assert_int_eq(ms->pc, 0x0);
 
@@ -702,7 +792,7 @@ START_TEST(test_key_not_press_instruction){
         run_instruction(ms, 0xE7A1);
         ck_assert_int_eq(ms->pc, 12);
 
-        delete_mState(&ms);
+        chip8_destroy(&ms);
 }
 END_TEST;
 
@@ -710,7 +800,7 @@ END_TEST;
  * 0xFX07 should set Vx to the delay timer's currenty value */
 START_TEST(test_get_timer_instruction){
         struct mState *ms;
-        ms = create_mState();
+        ms = chip8_init();
         ck_assert_ptr_nonnull(ms);
 
         ms->dTimer = 0xBC;
@@ -729,7 +819,7 @@ START_TEST(test_get_timer_instruction){
         run_instruction(ms, 0xFF07);
         ck_assert_uint_eq(ms->registers[0xF], 0xFF);
 
-        delete_mState(&ms);
+        chip8_destroy(&ms);
 }
 END_TEST
 
@@ -737,7 +827,7 @@ END_TEST
  * 0xFX15 should the delay timer to the value in Vx */
 START_TEST(test_set_delay_timer_instruction){
         struct mState *ms;
-        ms = create_mState();
+        ms = chip8_init();
         ck_assert_ptr_nonnull(ms);
 
         ms->registers[0x0] = 0xBC;
@@ -747,16 +837,16 @@ START_TEST(test_set_delay_timer_instruction){
         ms->registers[0x2] = 0x12;
         run_instruction(ms, 0xF215);
         ck_assert_uint_eq(ms->dTimer, 0x12);
-        
+
         ms->registers[0xF] = 0x99;
         run_instruction(ms, 0xFF15);
         ck_assert_uint_eq(ms->dTimer, 0x99);
-       
+
         ms->registers[0x5] = 0x88;
         run_instruction(ms, 0xF515);
         ck_assert_uint_eq(ms->dTimer, 0x88);
-        
-        delete_mState(&ms);
+
+        chip8_destroy(&ms);
 }
 END_TEST
 
@@ -764,7 +854,7 @@ END_TEST
  * 0xFX18 should the sound timer to the value in Vx */
 START_TEST(test_set_sound_timer_instruction){
         struct mState *ms;
-        ms = create_mState();
+        ms = chip8_init();
         ck_assert_ptr_nonnull(ms);
 
         ms->registers[0x0] = 0xBC;
@@ -774,33 +864,173 @@ START_TEST(test_set_sound_timer_instruction){
         ms->registers[0x2] = 0x12;
         run_instruction(ms, 0xF218);
         ck_assert_uint_eq(ms->sTimer, 0x12);
-        
+
         ms->registers[0xF] = 0x99;
         run_instruction(ms, 0xFF18);
         ck_assert_uint_eq(ms->sTimer, 0x99);
-       
+
         ms->registers[0x5] = 0x88;
         run_instruction(ms, 0xF518);
         ck_assert_uint_eq(ms->sTimer, 0x88);
         
-        delete_mState(&ms);
+        chip8_destroy(&ms);
 }
 END_TEST
+
+/* Test the add to i register instruction 
+ * 0xFX1E i += Vx */
+START_TEST(test_add_i_register_instruction){
+        struct mState *ms;
+        ms = chip8_init();
+        ck_assert_ptr_nonnull(ms);
+
+        ms->iRegister = 0;
+        ms->registers[0x0] = 0x12;
+        run_instruction(ms, 0xF01E);
+        ck_assert_uint_eq(ms->iRegister, 0x12);
+
+        ms->registers[0xB] = 0x90;
+        run_instruction(ms, 0xFB1E);
+        ck_assert_uint_eq(ms->iRegister, 0xA2);
+
+        chip8_destroy(&ms);
+}
+END_TEST
+
+/* Test the get font instruction 
+ * 0xFX29 stores the address of the 4 bit character in Vx to the I register */
+START_TEST(test_get_font_instruction){
+        struct mState *ms;
+        ms = chip8_init();
+        ck_assert_ptr_nonnull(ms);
+        
+        ms->registers[0x0] = 0x00;
+        run_instruction(ms, 0xF029);
+        ck_assert_uint_eq(ms->mem[ms->iRegister],     0b11110000);
+        ck_assert_uint_eq(ms->mem[ms->iRegister + 1], 0b10010000);
+        ck_assert_uint_eq(ms->mem[ms->iRegister + 2], 0b10010000);
+        ck_assert_uint_eq(ms->mem[ms->iRegister + 3], 0b10010000);
+        ck_assert_uint_eq(ms->mem[ms->iRegister + 4], 0b11110000);
+
+        ms->registers[0xC] = 0x0F;
+        run_instruction(ms, 0xFC29);
+        ck_assert_uint_eq(ms->mem[ms->iRegister],     0b11110000);
+        ck_assert_uint_eq(ms->mem[ms->iRegister + 1], 0b10000000);
+        ck_assert_uint_eq(ms->mem[ms->iRegister + 2], 0b11110000);
+        ck_assert_uint_eq(ms->mem[ms->iRegister + 3], 0b10000000);
+        ck_assert_uint_eq(ms->mem[ms->iRegister + 4], 0b10000000);
+
+        chip8_destroy(&ms);
+}
+END_TEST
+
+/* Test the to BCD instruction
+ * 0xFX33 should store the BCD rep of Vx starting at I address */
+START_TEST(test_to_bcd_instruction){
+        struct mState *ms;
+        ms = chip8_init();
+        ck_assert_ptr_nonnull(ms);
+
+        ms->registers[0x0] = 0x00;
+        ms->iRegister = 0;
+        run_instruction(ms, 0xF033);
+        ck_assert_uint_eq(ms->mem[ms->iRegister],     0);
+        ck_assert_uint_eq(ms->mem[ms->iRegister + 1], 0);
+        ck_assert_uint_eq(ms->mem[ms->iRegister + 2], 0);
+
+        ms->registers[0xB] = 255;
+        ms->iRegister = 0x300;
+        run_instruction(ms, 0xFB33);
+        ck_assert_uint_eq(ms->mem[ms->iRegister],     2);
+        ck_assert_uint_eq(ms->mem[ms->iRegister + 1], 5);
+        ck_assert_uint_eq(ms->mem[ms->iRegister + 2], 5);
+        
+        ms->registers[0xB] = 99;
+        ms->iRegister = 0x200;
+        run_instruction(ms, 0xFB33);
+        ck_assert_uint_eq(ms->mem[ms->iRegister],     0);
+        ck_assert_uint_eq(ms->mem[ms->iRegister + 1], 9);
+        ck_assert_uint_eq(ms->mem[ms->iRegister + 2], 9);
+        
+        ms->registers[0xB] = 1;
+        ms->iRegister = 0x250;
+        run_instruction(ms, 0xFB33);
+        ck_assert_uint_eq(ms->mem[ms->iRegister],     0);
+        ck_assert_uint_eq(ms->mem[ms->iRegister + 1], 0);
+        ck_assert_uint_eq(ms->mem[ms->iRegister + 2], 1);
+
+        chip8_destroy(&ms);
+}
+END_TEST
+
+/* Test the dump register instruction
+ * 0xFX55 writes [V0, Vx] to memory starting at I. I is increased 1 for each
+ * value written */
+START_TEST(test_dump_instruction){
+        struct mState *ms;
+        ms = chip8_init();
+        ck_assert_ptr_nonnull(ms);
+        ms->iRegister = 0x400;
+        for(size_t i = 0; i < 16; i++)
+                ms->registers[i] = rand();
+        run_instruction(ms, 0xFF55);
+        for(size_t i = 0; i < 16; i++)
+                ck_assert_uint_eq(ms->mem[0x400 + i], ms->registers[i]);
+        ck_assert_uint_eq(ms->iRegister, 0x410);
+        ms->mem[0x501] = 0;
+        ms->iRegister = 0x500;
+        run_instruction(ms, 0xF055);
+        ck_assert_uint_eq(ms->mem[0x500], ms->registers[0]);
+        ck_assert_uint_eq(ms->mem[0x501], 0);
+        ck_assert_uint_eq(ms->iRegister, 0x501);
+
+        chip8_destroy(&ms);
+}
+END_TEST
+
+START_TEST(test_load_instruction){
+        struct mState *ms;
+        ms = chip8_init();
+        ck_assert_ptr_nonnull(ms);
+        ms->iRegister = 0x400;
+
+        for(size_t i = 0; i < 16; i++)
+                ms->mem[0x400 + i] = rand();
+        run_instruction(ms, 0xFF65);
+        for(size_t i = 0; i < 16; i++)
+                ck_assert_uint_eq(ms->mem[0x400 + i], ms->registers[i]);
+        ck_assert_uint_eq(ms->iRegister, 0x410);
+
+        for(size_t i = 0; i < 3; i++)
+                ms->mem[0xBCD + i] = rand();
+        ms->iRegister = 0xBCD;
+        run_instruction(ms, 0xF265);
+        for(size_t i = 0; i < 3; i++)
+                ck_assert_uint_eq(ms->mem[0xBCD + i], ms->registers[i]);
+
+        ck_assert_uint_eq(ms->iRegister, 0xBD0);
+}
+END_TEST
+
 
 Suite *chip8_suite(void){
         Suite *s;
         TCase *tc_core;
         TCase *tc_ins;
-        s = suite_create("mState");
+        TCase *tc_func;
+        s = suite_create("CHIP 8 Unit Tests");
         tc_core = tcase_create("core");
         tc_ins = tcase_create("instructions");
+        tc_func = tcase_create("functionality");
 
         /* Core operations */
-        tcase_add_test(tc_core, test_mState_create);
-        tcase_add_test(tc_core, test_mState_delete);
+        tcase_add_test(tc_core, test_chip8_init);
+        tcase_add_test(tc_core, test_chip8_destroy);
         suite_add_tcase(s, tc_core);
         /* Instructions */
+        tcase_add_test(tc_ins, test_clear_instruction);
         tcase_add_test(tc_ins, test_return_instruction);
+        tcase_add_test(tc_ins, test_jump_instruction);
         tcase_add_test(tc_ins, test_subroutine_call_instruction);
         tcase_add_test(tc_ins, test_equal_immediate);
         tcase_add_test(tc_ins, test_not_equal_immediate);
@@ -826,7 +1056,17 @@ Suite *chip8_suite(void){
         tcase_add_test(tc_ins, test_get_timer_instruction);
         tcase_add_test(tc_ins, test_set_delay_timer_instruction);
         tcase_add_test(tc_ins, test_set_sound_timer_instruction);
+        tcase_add_test(tc_ins, test_add_i_register_instruction);
+        tcase_add_test(tc_ins, test_get_font_instruction);
+        tcase_add_test(tc_ins, test_to_bcd_instruction);
+        tcase_add_test(tc_ins, test_dump_instruction);
+        tcase_add_test(tc_ins, test_load_instruction);
         suite_add_tcase(s, tc_ins);
+
+        tcase_add_test(tc_func, test_chip8_run);
+        tcase_add_test(tc_func, test_chip8_timers);
+        tcase_set_timeout(tc_func, 10);
+        suite_add_tcase(s, tc_func);
 
         return s;
 }

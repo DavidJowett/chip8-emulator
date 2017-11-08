@@ -4,6 +4,25 @@
 #include "chip8.h"
 
 
+/* The font table. 4x5 charactrs for 0-9 A-F */
+#define FONT_LEN 80
+static const uint8_t font[] = {
+        0xF0, 0x90, 0x90, 0x90, 0xF0,
+        0x20, 0x60, 0x20, 0x20, 0x70,
+        0xF0, 0x10, 0xF0, 0x80, 0xF0,
+        0xF0, 0x10, 0xF0, 0x10, 0xF0,
+        0x90, 0x90, 0xF0, 0x10, 0x10,
+        0xF0, 0x80, 0xF0, 0x10, 0xF0,
+        0xF0, 0x80, 0xF0, 0x90, 0xF0,
+        0xF0, 0x10, 0x20, 0x40, 0x40,
+        0xF0, 0x90, 0xF0, 0x90, 0xF0,
+        0xF0, 0x90, 0xF0, 0x10, 0xF0,
+        0xF0, 0x90, 0xF0, 0x90, 0x90,
+        0xE0, 0x90, 0xE0, 0x90, 0xE0,
+        0xF0, 0x80, 0x80, 0x80, 0xF0,
+        0xE0, 0x90, 0x90, 0x90, 0xE0,
+        0xF0, 0x80, 0xF0, 0x80, 0xF0,
+        0xF0, 0x80, 0xF0, 0x80, 0x80};
 
 static void clear_display(struct mState *ms);
 
@@ -34,8 +53,9 @@ static inline void get2Registers(int16_t ins, uint8_t *reg1, uint8_t *reg2){
 static void *timerThread(void *data){
         struct mState *ms = (struct mState *) data;
         struct timespec ts, ts2;
-        ts.tv_nsec = 166666667;
-        while(0){
+        ts.tv_nsec = 16666666L;
+        ts.tv_sec = 0;
+        while(ms->running){
                 pthread_mutex_lock(&ms->timerMutex);
                 if(ms->dTimer != 0) ms->dTimer--;
                 if(ms->sTimer != 0) ms->sTimer--;
@@ -45,7 +65,44 @@ static void *timerThread(void *data){
         pthread_exit(NULL);
 }
 
-struct mState *create_mState(void){
+static void *executionThread(void * data){
+        struct mState *ms = (struct mState *) data;
+        ms->count = 0;
+        while(ms->running){
+                uint16_t ins;
+                uint8_t lsins, msins;
+                msins = ms->mem[ms->pc];
+                lsins = ms->mem[ms->pc + 1];
+                ins = ((uint16_t) (msins)) << 8;
+                ins |= lsins;
+                run_instruction(ms, ins);
+                ms->count++;
+                if(ms->pc > 4095){
+                        puts("PC > memory size");
+                        pthread_exit(NULL);
+                }
+        }
+        pthread_exit(NULL);
+}
+
+void chip8_key_event_notify(struct mState *ms, struct keyEvent ke){
+        if(ke.key > 0xF){
+                puts("Invalid keycode!");
+                return;
+        }
+        pthread_mutex_lock(&ms->keyMutex);
+        ms->lastEvent = ke;
+        if(ke.type == Pressed){
+                ms->keys[ke.key] = 1;
+        } else {
+                ms->keys[ke.key] = 0;
+        }
+        pthread_cond_signal(&ms->incomingKeyEvent);
+        pthread_mutex_unlock(&ms->keyMutex);
+
+}
+
+struct mState *chip8_init(void){
         struct mState *ms = malloc(sizeof(struct mState));
         if(ms == NULL) return NULL;
         ms->stack = calloc(48, sizeof(int16_t));
@@ -53,6 +110,8 @@ struct mState *create_mState(void){
         ms->stackSize = 0;
         ms->stackCapacity = 48;
         ms->pc = 0;
+        ms->sTimer = 0;
+        ms->dTimer = 0;
         ms->iRegister = 0;
         for(int i = 0; i < 16; i++)
                 ms->registers[i] = 0;
@@ -63,9 +122,12 @@ struct mState *create_mState(void){
                 ms->keys[i] = 0;
         }
 
-        /* Setup mutexs */
-        pthread_mutex_init(&ms->timerMutex, NULL);
-        pthread_mutex_init(&ms->keyMutex, NULL);
+
+
+        /* Setup up the font
+         * http://devernay.free.fr/hacks/chip8/C8TECH10.HTM#2.4 */
+        for(size_t i = 0; i < FONT_LEN; i++)
+                ms->mem[i] = font[i];
 
         return ms;
 
@@ -74,7 +136,7 @@ mStateInitFail:
         return NULL;
 }
 
-void delete_mState(struct mState **ms){
+void chip8_destroy(struct mState **ms){
         free((*ms)->stack);
         free(*ms);
         *ms = NULL;
@@ -102,7 +164,6 @@ void run_instruction(struct mState *ms, uint16_t ins){
                                         ms->stackSize--;
                                 }
                         } else {
-                                puts("Call");
                                 ms->pc += 2;
                         }
                         break;
@@ -143,6 +204,7 @@ void run_instruction(struct mState *ms, uint16_t ins){
                         /* The instruction must end in a zero */
                         if(ins & 7){
                                 puts("invalid");
+                                printf("Invalid %x %x\n", ins, ms->pc);
                         } else {
                                 uint8_t rID1, rID2;
                                 get2Registers(ins, &rID1, &rID2);
@@ -165,6 +227,7 @@ void run_instruction(struct mState *ms, uint16_t ins){
                         getRegister(ins, &rID);
                         int16_t n = get8bit(ins);
                         ms->registers[rID] += n;
+                        ms->pc += 2;
                         } break;
                 case 0x8:{
                         uint8_t sopc = get4bit(ins);
@@ -207,10 +270,12 @@ void run_instruction(struct mState *ms, uint16_t ins){
                                         ms->registers[rID1] = ms->registers[rID2];
                                         break;
                                 default:
-                                        puts("invalid");
+                                        printf("Invalid %x %x\n", ins, ms->pc);
+                                        puts("invalid2");
                                         break;
 
                         }
+                        ms->pc += 2;
                 }break;
                 case 0x9:{
                         uint8_t rID1; 
@@ -223,6 +288,7 @@ void run_instruction(struct mState *ms, uint16_t ins){
                         }break;
                 case 0xA:
                         ms->iRegister = get12bit(ins);
+                        ms->pc += 2;
                         break;
                 case 0xB:
                         ms->pc = ms->registers[0] + get12bit(ins);
@@ -231,6 +297,7 @@ void run_instruction(struct mState *ms, uint16_t ins){
                         uint8_t rID;
                         getRegister(ins, &rID);
                         ms->registers[rID] = (rand() % 256) & get8bit(ins);
+                        ms->pc += 2;
                         }break;
                 case 0xD:{
                         uint8_t rID1;
@@ -275,6 +342,7 @@ void run_instruction(struct mState *ms, uint16_t ins){
                                 }
                                 ms->registers[0xF] = vf;
                         }
+                        ms->pc += 2;
                         /* TODO: render the screen */
                         }break;
                 case 0xE:{
@@ -307,9 +375,18 @@ void run_instruction(struct mState *ms, uint16_t ins){
                                         ms->registers[rID] = ms->dTimer;
                                         pthread_mutex_unlock(&ms->timerMutex);
                                         break;
-                                case 0x0A:
-                                        puts("KeyOp");
-                                        break;
+                                case 0x0A:{
+                                        while(1){
+                                                pthread_mutex_lock(&ms->keyMutex);
+                                                pthread_cond_wait(&ms->incomingKeyEvent, &ms->keyMutex);
+                                                if(ms->lastEvent.type == Pressed){
+                                                        ms->registers[rID] = ms->lastEvent.key;
+                                                        break;
+                                                }
+                                                pthread_mutex_unlock(&ms->keyMutex);
+                                        }
+                                        pthread_mutex_unlock(&ms->keyMutex);
+                                        }break;
                                 case 0x15:
                                         pthread_mutex_lock(&ms->timerMutex);
                                         ms->dTimer = ms->registers[rID];
@@ -320,16 +397,62 @@ void run_instruction(struct mState *ms, uint16_t ins){
                                         ms->sTimer = ms->registers[rID];
                                         pthread_mutex_unlock(&ms->timerMutex);
                                         break;
+                                case 0x1E:
+                                        ms->iRegister += ms->registers[rID];
+                                        break;
+                                case 0x29:
+                                        ms->iRegister = ms->registers[rID] * 5;
+                                        break;
+                                case 0x33:
+                                        ms->mem[ms->iRegister] = ms->registers[rID] / 100;
+                                        ms->mem[ms->iRegister + 1] = (ms->registers[rID] % 100) / 10;
+                                        ms->mem[ms->iRegister + 2] = (ms->registers[rID] % 10);
+                                        break;
+                                case 0x55:
+                                        for(size_t i = 0; i <= rID; i++)
+                                                ms->mem[ms->iRegister++] = ms->registers[i];
+                                        break;
+                                case 0x65:
+                                        for(size_t i = 0; i <= rID; i++)
+                                                ms->registers[i] = ms->mem[ms->iRegister++];
+                                        break;
                         }
+                        ms->pc += 2;
                         }break;
 
         }
 }
 
 void chip8_run(struct mState *ms){
+        /* set the state to running */
+        ms->running = 1;
+
+        /* Setup mutexs */
+        pthread_mutex_init(&ms->timerMutex, NULL);
+        pthread_mutex_init(&ms->keyMutex, NULL);
+
+        /* Setup the conditon variables */
+        pthread_cond_init(&ms->incomingKeyEvent, NULL);
+
         pthread_create(&ms->tThread, NULL, timerThread, ((void *) ms));
+        pthread_create(&ms->eThread, NULL, executionThread, ((void *) ms));
 }
 
 void chip8_halt(struct mState *ms){
-        pthread_cancel(ms->tThread);
+        /* stop the threads */
+        ms->running = 0;
+
+        /* wait for the threads to terminate */
+        pthread_join(ms->eThread, NULL);
+        pthread_join(ms->tThread, NULL);
+
+        /* TODO stop the notification of key events */
+        
+        /* destroy the condition varibales */
+        pthread_cond_destroy(&ms->incomingKeyEvent);
+
+        /* destroy the mutexs */
+        pthread_mutex_destroy(&ms->timerMutex);
+        pthread_mutex_destroy(&ms->keyMutex);
+
 }
