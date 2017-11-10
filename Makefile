@@ -1,14 +1,26 @@
 OBJECTS=chip8.o
 MOBJECTS=main.o
 TOBJECTS=chip8_test.o
+CFLAGS=-g -Wall
+LFLAGS=-lcheck -lpthread
+
+ifeq ($(coverage), true)
+	CFLAGS+=-fprofile-arcs -ftest-coverage
+	LFLAGS+=-lgcov
+endif
 
 all: ${OBJECTS} ${MOBJECTS}
 	gcc -o chip8 ${OBJECTS} ${MOBJECTS}
 test: ${OBJECTS} ${TOBJECTS}
-	gcc -o test ${OBJECTS} ${TOBJECTS} -lcheck -lpthread
+	gcc -o test ${OBJECTS} ${TOBJECTS} ${LFLAGS}
 
 %.o: %.c
-	gcc -g -Wall -c $< -o $@
+	gcc ${CFLAGS} -c $< -o $@
 
 clean:
 	rm -f test chip8 ${OBJECTS} ${MOBJECTS} ${TOBJECTS}
+	rm *.gcno *.gcda
+	rm -rf coverage
+report:
+	lcov --capture --directory . --output-file coverage.info
+	genhtml coverage.info --output-directory coverage

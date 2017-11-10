@@ -1,7 +1,9 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <time.h>
+#include <sys/time.h>
 #include "chip8.h"
+
 
 
 /* The font table. 4x5 charactrs for 0-9 A-F */
@@ -99,7 +101,6 @@ void chip8_key_event_notify(struct mState *ms, struct keyEvent ke){
         }
         pthread_cond_signal(&ms->incomingKeyEvent);
         pthread_mutex_unlock(&ms->keyMutex);
-
 }
 
 struct mState *chip8_init(void){
@@ -109,7 +110,7 @@ struct mState *chip8_init(void){
         if(ms->stack == NULL) goto mStateInitFail;
         ms->stackSize = 0;
         ms->stackCapacity = 48;
-        ms->pc = 0;
+        ms->pc = 0x200;
         ms->sTimer = 0;
         ms->dTimer = 0;
         ms->iRegister = 0;
@@ -203,7 +204,6 @@ void run_instruction(struct mState *ms, uint16_t ins){
                         /* 0x5XY0 Vx == Vy */
                         /* The instruction must end in a zero */
                         if(ins & 7){
-                                puts("invalid");
                                 printf("Invalid %x %x\n", ins, ms->pc);
                         } else {
                                 uint8_t rID1, rID2;
@@ -271,7 +271,6 @@ void run_instruction(struct mState *ms, uint16_t ins){
                                         break;
                                 default:
                                         printf("Invalid %x %x\n", ins, ms->pc);
-                                        puts("invalid2");
                                         break;
 
                         }
@@ -306,12 +305,10 @@ void run_instruction(struct mState *ms, uint16_t ins){
                         get2Registers(ins, &rID1, &rID2);
                         uint8_t x = ms->registers[rID1];
                         uint8_t y = ms->registers[rID2];
-                        //printf("n: %u y: %u x: %u\n", n, y, x);
                         /* wrap X to fit in the screan */
                         x = x % 64;
                         /* wrap y to fit in the screen */
                         y = y % 32;
-                        //printf("n: %u y: %u x: %u\n", n, y, x);
                         for(size_t i = 0; i < n; i++){
                                 uint8_t rData = ms->mem[ms->iRegister + i];
                                 /* wrap row if the row is greater > 32 */
@@ -324,7 +321,6 @@ void run_instruction(struct mState *ms, uint16_t ins){
                                 /* The second byte that needs updating */
                                 uint8_t eCell = (x / 8) + (overLap != 0);
 
-                                //printf("sCell: %u eCell: %u, overLap: %u\n", sCell, eCell, overLap);
                                 /* Wrap sprite to the start of the line */
                                 if(eCell > 7)
                                         eCell = 0;
@@ -376,16 +372,24 @@ void run_instruction(struct mState *ms, uint16_t ins){
                                         pthread_mutex_unlock(&ms->timerMutex);
                                         break;
                                 case 0x0A:{
-                                        while(1){
+                                        struct timespec ts;
+                                        //ts.tv_nsec = 500000000;
+                                        ms->lastEvent.type = Released;
+                                        while(ms->running){
+                                                //gettimeofday(&now, NULL);
+                                                //clock_gettime(CLOCK_REALTIME, &ts);
+                                                //ts.tv_sec += 1;
                                                 pthread_mutex_lock(&ms->keyMutex);
-                                                pthread_cond_wait(&ms->incomingKeyEvent, &ms->keyMutex);
+                                                clock_gettime(CLOCK_REALTIME, &ts);
+                                                ts.tv_sec += 2;
+                                                pthread_cond_timedwait(&ms->incomingKeyEvent, &ms->keyMutex, &ts);
                                                 if(ms->lastEvent.type == Pressed){
                                                         ms->registers[rID] = ms->lastEvent.key;
                                                         break;
                                                 }
                                                 pthread_mutex_unlock(&ms->keyMutex);
                                         }
-                                        pthread_mutex_unlock(&ms->keyMutex);
+                                        //pthread_mutex_unlock(&ms->keyMutex);
                                         }break;
                                 case 0x15:
                                         pthread_mutex_lock(&ms->timerMutex);
@@ -441,6 +445,7 @@ void chip8_run(struct mState *ms){
 void chip8_halt(struct mState *ms){
         /* stop the threads */
         ms->running = 0;
+        pthread_cond_broadcast(&ms->incomingKeyEvent);
 
         /* wait for the threads to terminate */
         pthread_join(ms->eThread, NULL);

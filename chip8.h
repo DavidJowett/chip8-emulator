@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <pthread.h>
 
-enum keyEventType{Pressed, Relased};
+enum keyEventType{Pressed, Released};
 
 struct keyEvent {
         enum keyEventType type;
