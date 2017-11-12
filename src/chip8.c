@@ -1,8 +1,10 @@
 #include <stdio.h>
 #include <stdint.h>
-#include <time.h>
 #include <sys/time.h>
+#include <time.h>
+
 #include "chip8.h"
+#include "runtime_error.h"
 
 
 
@@ -459,5 +461,28 @@ void chip8_halt(struct mState *ms){
         /* destroy the mutexs */
         pthread_mutex_destroy(&ms->timerMutex);
         pthread_mutex_destroy(&ms->keyMutex);
+}
 
+struct runtime_error *chip8_load_rom(struct mState *ms, char *file){
+        size_t len = 0;
+        FILE *fp = fopen(file, "r");
+        char errmsg[512];
+        if(fp == NULL){
+                // File failed to open
+                snprintf(errmsg, 512, "Could not open ROM file: \"%s\"", file);
+                return runtime_error_init(errmsg);
+        }
+        fseek(fp, 0L, SEEK_END);
+        len = ftell(fp);
+        if(len > 3584){
+                snprintf(errmsg, 512, "ROM file, \"%s\", is %lu bytes which is more than the max ROM size of 3584 bytes", file, len);
+                fclose(fp);
+
+                return runtime_error_init(errmsg);
+        }
+
+        fread(ms->mem + 0x200,  1, len, fp);
+
+        fclose(fp);
+        return NULL;
 }

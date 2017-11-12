@@ -1,6 +1,6 @@
-OBJECTS=chip8.o
-MOBJECTS=main.o
-TOBJECTS=chip8_test.o
+OBJECTS=src/chip8.o src/runtime_error.o
+MOBJECTS=src/main.o
+TOBJECTS=test/chip8_test.o test/runtime_error_test.o test/main.o
 CFLAGS=-g -Wall
 LFLAGS=-lcheck -lpthread
 
@@ -12,14 +12,14 @@ endif
 all: ${OBJECTS} ${MOBJECTS}
 	gcc -o chip8 ${OBJECTS} ${MOBJECTS}
 test: ${OBJECTS} ${TOBJECTS}
-	gcc -o test ${OBJECTS} ${TOBJECTS} ${LFLAGS}
+	gcc -o tests ${OBJECTS} ${TOBJECTS} ${LFLAGS}
 
 %.o: %.c
 	gcc ${CFLAGS} -c $< -o $@
 
 clean:
 	rm -f test chip8 ${OBJECTS} ${MOBJECTS} ${TOBJECTS}
-	rm *.gcno *.gcda
+	rm -f *.gcno *.gcda coverage.info
 	rm -rf coverage
 report:
 	lcov --capture --directory . --output-file coverage.info

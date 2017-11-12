@@ -1,4 +1,15 @@
+# ignore object files
 *.o
+
+# ignore vim files
 *.swp
-test
+
+# ignore the executables
+tests
 chip8
+
+# ignore code coverage results files
+*.info
+*.gcno
+*.gcda
+coverage/

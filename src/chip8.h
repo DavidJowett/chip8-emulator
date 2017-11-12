@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <pthread.h>
 
+#include "runtime_error.h"
+
 enum keyEventType{Pressed, Released};
 
 struct keyEvent {
@@ -44,14 +46,11 @@ struct mState {
         pthread_cond_t incomingKeyEvent;
 };
 
-struct runtime_error {
-        char *msg;
-};
-
 void run_instruction(struct mState *ms, uint16_t ins);
 struct mState *chip8_init(void);
 void chip8_destroy(struct mState **ms);
 void chip8_run(struct mState *ms);
 void chip8_halt(struct mState *ms);
+struct runtime_error *chip8_load_rom(struct mState *ms, char *file);
 void chip8_key_event_notify(struct mState *ms, struct keyEvent);
 #endif

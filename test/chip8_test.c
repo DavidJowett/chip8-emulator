@@ -3,9 +3,12 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
-#include "chip8.h"
 
-struct mState *ms;
+#include "chip8_test.h"
+
+#include "../src/chip8.h"
+
+static struct mState *ms;
 
 void chip8_setup(void){
         ms = chip8_init();
@@ -39,6 +42,17 @@ START_TEST(test_chip8_destroy){
 }
 END_TEST
 
+START_TEST(test_chip8_load_rom){
+        struct runtime_error *re;
+        re = chip8_load_rom(ms, "testdata/nonexistence");
+        ck_assert_ptr_nonnull(re);
+        ck_assert_str_eq(re->msg, "Could not open ROM file: \"testdata/nonexistence\"");
+        re = chip8_load_rom(ms, "testdata/invalid");
+        ck_assert_ptr_nonnull(re);
+        ck_assert_str_eq(re->msg, "ROM file, \"testdata/invalid\", is 4096 bytes which is more than the max ROM size of 3584 bytes");
+}
+END_TEST
+
 START_TEST(test_chip8_run){
         /* Set V0 to BB */
         ms->mem[0x400] = 0x60;
@@ -60,7 +74,7 @@ START_TEST(test_chip8_run){
         ck_assert_uint_eq(ms->registers[0x0], 0xBB);
         ck_assert_uint_eq(ms->registers[0xf], 0xBc);
         ck_assert_uint_eq(ms->pc, 0x404);
-        printf("%lu instructions in 4 seconds. %f instructions per a second\n", ms->count, ((double) ms->count) / 4.0);
+        //printf("%lu instructions in 4 seconds. %f instructions per a second\n", ms->count, ((double) ms->count) / 4.0);
 }
 END_TEST
 
@@ -961,6 +975,7 @@ Suite *chip8_suite(void){
 
         tcase_add_test(tc_func, test_chip8_run);
         tcase_add_test(tc_func, test_chip8_timers);
+        tcase_add_test(tc_func, test_chip8_load_rom);
         tcase_add_checked_fixture(tc_func, chip8_setup, chip8_teardown);
         tcase_set_timeout(tc_func, 20);
         suite_add_tcase(s, tc_func);
@@ -969,20 +984,3 @@ Suite *chip8_suite(void){
 }
 
 
-int main(int argc, char **argv){
-        srand(time(NULL));
-        Suite *s;
-        SRunner *sr;
-        int number_failed;
-
-        s = chip8_suite();
-        sr = srunner_create(s);
-        srunner_run_all(sr, CK_NORMAL);
-        number_failed = srunner_ntests_failed(sr);
-
-        srunner_free(sr);
-
-        return (number_failed == 0) ? 1 : 0;
-
-        return 0;
-}
