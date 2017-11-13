@@ -14,13 +14,14 @@
  * along with this program; if not, write to the Free Software Foundation,
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
  */
-#ifndef _CHIP8_H
-#define _CHIP8_H
+#ifndef _SRC_CHIP8_H
+#define _SRC_CHIP8_H
 #include <stdint.h>
 #include <stdlib.h>
 #include <pthread.h>
 
 #include "runtime_error.h"
+#include "ui.h"
 
 enum keyEventType{Pressed, Released};
 
@@ -42,6 +43,8 @@ struct mState {
 
         uint8_t keys[16];
         struct keyEvent lastEvent;
+
+        struct ui *display;
 
         /* Timers */
         uint8_t dTimer;
@@ -69,4 +72,5 @@ void chip8_run(struct mState *ms);
 void chip8_halt(struct mState *ms);
 struct runtime_error *chip8_load_rom(struct mState *ms, char *file);
 void chip8_key_event_notify(struct mState *ms, struct keyEvent);
+void chip8_wait_for_ui_stop(struct mState *ms);
 #endif

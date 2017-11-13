@@ -66,6 +66,12 @@ START_TEST(test_chip8_load_rom){
         re = chip8_load_rom(ms, "testdata/invalid");
         ck_assert_ptr_nonnull(re);
         ck_assert_str_eq(re->msg, "ROM file, \"testdata/invalid\", is 4096 bytes which is more than the max ROM size of 3584 bytes");
+        re = chip8_load_rom(ms, "testdata/TICTAC");
+        ck_assert_ptr_null(re);
+        ck_assert_uint_eq(ms->mem[0x200], 0x12);
+        ck_assert_uint_eq(ms->mem[0x201], 0x18);
+        ck_assert_uint_eq(ms->mem[0x202], 0x54);
+        ck_assert_uint_eq(ms->mem[0x203], 0x49);
 }
 END_TEST
 

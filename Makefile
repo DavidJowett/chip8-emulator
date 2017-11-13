@@ -1,8 +1,8 @@
-OBJECTS=src/chip8.o src/runtime_error.o
+OBJECTS=src/chip8.o src/runtime_error.o src/ui.o src/shader.o
 MOBJECTS=src/main.o
 TOBJECTS=test/chip8_test.o test/runtime_error_test.o test/main.o
-CFLAGS=-g -Wall
-LFLAGS=-lcheck -lpthread
+CFLAGS=-g -Wall -Wno-implicit-function-declaration
+LFLAGS=-lcheck -lpthread `pkg-config --libs glew glfw3`
 
 ifeq ($(coverage), true)
 	CFLAGS+=-fprofile-arcs -ftest-coverage
@@ -10,7 +10,7 @@ ifeq ($(coverage), true)
 endif
 
 all: ${OBJECTS} ${MOBJECTS}
-	gcc -o chip8 ${OBJECTS} ${MOBJECTS}
+	gcc -o chip8 ${OBJECTS} ${MOBJECTS} ${LFLAGS}
 test: ${OBJECTS} ${TOBJECTS}
 	gcc -o tests ${OBJECTS} ${TOBJECTS} ${LFLAGS}
 

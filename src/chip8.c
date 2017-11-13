@@ -95,6 +95,7 @@ static void *executionThread(void * data){
                 lsins = ms->mem[ms->pc + 1];
                 ins = ((uint16_t) (msins)) << 8;
                 ins |= lsins;
+                //printf("%x\n", ins);
                 run_instruction(ms, ins);
                 ms->count++;
                 if(ms->pc > 4095){
@@ -142,20 +143,25 @@ struct mState *chip8_init(void){
         }
 
 
-
         /* Setup up the font
          * http://devernay.free.fr/hacks/chip8/C8TECH10.HTM#2.4 */
         for(size_t i = 0; i < FONT_LEN; i++)
                 ms->mem[i] = font[i];
 
-        return ms;
+        /* init the UI */
+        ms->display = ui_init();
+        if(ms->display == NULL) goto uiInitFail;
 
+        return ms;
+uiInitFail:
 mStateInitFail:
         free(ms);
         return NULL;
 }
 
 void chip8_destroy(struct mState **ms){
+        if(*ms == NULL) return;
+        ui_destroy(&(*ms)->display);
         free((*ms)->stack);
         free(*ms);
         *ms = NULL;
@@ -174,6 +180,7 @@ void run_instruction(struct mState *ms, uint16_t ins){
                 case 0x0:
                         if(ins == 0x00E0) {
                                 clear_display(ms);
+                                ui_set_chip8_display(ms->display, ms->disp);
                                 ms->pc += 2;
                         } else if(ins == 0x00EE){
                                 if(ms->stackSize == 0){
@@ -183,7 +190,7 @@ void run_instruction(struct mState *ms, uint16_t ins){
                                         ms->stackSize--;
                                 }
                         } else {
-                                ms->pc += 2;
+                                ms->pc = get12bit(ins);
                         }
                         break;
                 case 0x1:
@@ -192,6 +199,7 @@ void run_instruction(struct mState *ms, uint16_t ins){
                 case 0x2:
                         if(ms->stackSize == ms->stackCapacity){
                                 puts("stack overflow!");
+                                printf("%x %x\n", ins, ms->pc);
                         } else {
                                 ms->stack[ms->stackSize++] = ms->pc + 2;
                                 ms->pc = get12bit(ins);
@@ -356,6 +364,7 @@ void run_instruction(struct mState *ms, uint16_t ins){
                                 }
                                 ms->registers[0xF] = vf;
                         }
+                        ui_set_chip8_display(ms->display, ms->disp);
                         ms->pc += 2;
                         /* TODO: render the screen */
                         }break;
@@ -448,6 +457,9 @@ void run_instruction(struct mState *ms, uint16_t ins){
 void chip8_run(struct mState *ms){
         /* set the state to running */
         ms->running = 1;
+        
+        /* Start the UI */
+        ui_run(ms->display);
 
         /* Setup mutexs */
         pthread_mutex_init(&ms->timerMutex, NULL);
@@ -469,7 +481,8 @@ void chip8_halt(struct mState *ms){
         pthread_join(ms->eThread, NULL);
         pthread_join(ms->tThread, NULL);
 
-        /* TODO stop the notification of key events */
+        /* Stop the UI */
+        ui_halt(ms->display);
         
         /* destroy the condition varibales */
         pthread_cond_destroy(&ms->incomingKeyEvent);
@@ -490,6 +503,7 @@ struct runtime_error *chip8_load_rom(struct mState *ms, char *file){
         }
         fseek(fp, 0L, SEEK_END);
         len = ftell(fp);
+        rewind(fp);
         if(len > 3584){
                 snprintf(errmsg, 512, "ROM file, \"%s\", is %lu bytes which is more than the max ROM size of 3584 bytes", file, len);
                 fclose(fp);
@@ -501,4 +515,15 @@ struct runtime_error *chip8_load_rom(struct mState *ms, char *file){
 
         fclose(fp);
         return NULL;
+}
+
+/* Blocks until the UI thread is halted */
+void chip8_wait_for_ui_stop(struct mState *chip){
+        for(;;){
+                pthread_mutex_lock(&chip->display->stateMutex);
+                pthread_cond_wait(&chip->display->uiStateChange, &chip->display->stateMutex);
+                if(chip->display->state == STATE_HALTED) break;
+                pthread_mutex_unlock(&chip->display->stateMutex);
+        }
+        pthread_mutex_unlock(&chip->display->stateMutex);
 }
