@@ -18,7 +18,7 @@ test: ${OBJECTS} ${TOBJECTS}
 	gcc ${CFLAGS} -c $< -o $@
 
 clean:
-	rm -f test chip8 ${OBJECTS} ${MOBJECTS} ${TOBJECTS}
+	rm -f tests chip8 ${OBJECTS} ${MOBJECTS} ${TOBJECTS}
 	rm -f *.gcno *.gcda coverage.info
 	rm -rf coverage
 report:

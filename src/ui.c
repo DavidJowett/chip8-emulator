@@ -45,10 +45,9 @@ static void *ui_render(void *arg){
                 *retVal = -1;
                 pthread_exit(retVal);
         }
-        //glfwWindowHint(GLFW_SAMPLES, 4);
+
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-        //glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
         glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
         GLFWwindow *win;
@@ -61,6 +60,7 @@ static void *ui_render(void *arg){
         }
         glfwMakeContextCurrent(win);
         glfwSetFramebufferSizeCallback(win, resize_callback);
+        glfwSetWindowUserPointer(win, u);
         glewExperimental = GL_TRUE;
         if(glewInit() != GLEW_OK){
                 fprintf(stderr, "Failed to start GLEW\n");
@@ -76,6 +76,7 @@ static void *ui_render(void *arg){
         }
 
         float points[4290];
+        /* calculate the ventices for a 64x32 pixel screen */
         for(int y = 0; y < 33; y++){
                 for(int x = 0; x < 65; x ++){
                         points[y * 130 + (x * 2)] = (-1.0f + x * 2.0f / 64.0f);
@@ -83,37 +84,17 @@ static void *ui_render(void *arg){
                 }
                 
         }
-        /*float points[] = {
-                0.0f, -0.468750f,
-                0.031250f, -0.468750f,
-                0.0f, -0.5f,
-                0.031250f, -0.5f
-        };*/
         size_t indicesLen;
         unsigned int *indices = NULL;
-        indicesLen = chip8_disp_to_indices(u->chip8Disp, &indices);
-        /*unsigned int indices[] = {
-                0, 1, 65,
-                65, 66, 1,
-                976, 977, 1041,
-                1041, 1042, 977,
-        };*/
-
-        /*static const GLfloat vbd[] = {
-                -1.0f, 1.0f,
-                -1.0f, 0.0f,
-                0.0f, 1.0f,
-                -1.0f, -1.0f,
-                1.0f, -1.0f,
-                0.0f, 1.0f };*/
-        /* Element buffer */
         unsigned int EBO;
-        glGenBuffers(1, &EBO);
         unsigned int vao;
         unsigned int vbo;
+        indicesLen = chip8_disp_to_indices(u->chip8Disp, &indices);
 
+        /* generate buffers and vertex arrays */
         glGenVertexArrays(1, &vao);
         glGenBuffers(1, &vbo);
+        glGenBuffers(1, &EBO);
 
         glBindVertexArray(vao);
 
@@ -125,14 +106,8 @@ static void *ui_render(void *arg){
 
         glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
         glEnableVertexAttribArray(0);
-        //glBindBuffer(GL_ARRAY_BUFFER, 0);
-        //glBindVertexArray(0);
-
-        float green = 0.0f;
-
-
-
         glfwSetInputMode(win, GLFW_STICKY_KEYS, GL_TRUE);
+
         do {
                 pthread_mutex_lock(&u->dispMutex);
                 if(u->newData){
@@ -142,27 +117,20 @@ static void *ui_render(void *arg){
                 pthread_mutex_unlock(&u->dispMutex);
                 glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
                 glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(unsigned int) * indicesLen, indices, GL_DYNAMIC_DRAW);
-                /*glEnableVertexAttribArray(0);
-                glBindBuffer(GL_ARRAY_BUFFER, vb);
-                glVertexAttribPointer(0,3,GL_FLOAT, GL_FALSE, 0, (void*) 0);
-                glDrawArrays(GL_TRIANGLES, 0, 3);
-                glDisableVertexAttribArray(0);*/
+                
                 glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
                 glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
                 shader_use(s);
                 glBindVertexArray(vao);
-                //glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-                //glDrawArrays(GL_TRIANGLES, 0, 6);
+                
                 glDrawElements(GL_TRIANGLES, indicesLen, GL_UNSIGNED_INT, 0);
                 glBindVertexArray(0);
-                shader_set_float(s, "color", green);
-                //green += .0001;
 
                 glfwSwapBuffers(win);
                 glfwPollEvents();
 
-        } while(u->state && glfwGetKey(win, GLFW_KEY_ESCAPE) != GLFW_PRESS && !glfwWindowShouldClose(win));
+        } while(u->state && !glfwWindowShouldClose(win));
         glfwTerminate();
         *retVal = 0;
         pthread_mutex_lock(&u->stateMutex);
@@ -215,9 +183,11 @@ void ui_run(struct ui *u){
 
 void ui_halt(struct ui *u){
         int *retVal = 0;
-        u->state = 0;
+        /* request that UI stops. The UI thread will do a pthread_cond_broadcast
+         * when it actually stops */
+        u->state = STATE_HALTED;
+        /* Wait for the thread to stop */
         pthread_join(u->tid, (void **) &retVal);
 
-        printf("UI thread teruned: %d\n", *retVal);
         free(retVal);
 }
