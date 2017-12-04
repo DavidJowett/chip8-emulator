@@ -59,8 +59,11 @@ FX65 | Load registers [V0, VX] from memory starting at I. I is incremented for e
 * `roms` contains public domain ROMS for the Chip-8
 
 ## Building
+### Executable
+1. Build binary
+ `make`
 ### Unit Tests
-1. Build units
+1. Build unit Tests
 
  `make test`
 2. Execute Unit Tests
@@ -71,11 +74,11 @@ FX65 | Load registers [V0, VX] from memory starting at I. I is incremented for e
 The unit tests for the Chip-8 core implementation are located in the `test/chip8_test.c` file along with additional units tests for other components. These tests are written using the [Check](https://libcheck.github.io/check/) C unit testing frame work. The goals of Chip-* core unit tests is to test the core functionality of the Chip-8 VM, by verify each instruction behaves as expected along verifying higher level functionality such as timers, drawing to the display, and program executions works as expected.
 
 ## Current Status
-The implementation of the emulator core is complete. The display and input component is a work in progress. All functionality and unit tests are passing.
+The implementation of the emulator core is complete. The display output, and keyboarad input are functioning correctly.
 
 ## Todo
-1. OpenGL graphics 
- * Finish implementation
- * Send key press events to the emulator core
-2. Sound timer
+1. Key maps
+2: Instruction rate limiting
+ * Set a fixxed max rate of instructions per a second
+3. Sound timer
  * Make a sound when delay timer is not 0
