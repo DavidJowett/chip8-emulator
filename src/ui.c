@@ -3,14 +3,42 @@
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 
+#include "chip8.h"
 #include "shader.h"
 #include "ui.h"
 
+/* Keymap translates key presses to Chip-8 key codes.The index of the character
+ * is the chip-8 key code. For example if "5" is pressed, 0x5 is sent to the
+ * chip-8 emulator core */
+static const char keycodes[] = {'0','1','2','3','4','5','6','7','8','9','a','b','c','d','e','f'};
+
 static void resize_callback(GLFWwindow* window, int width, int height);
+static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods);
 static size_t chip8_disp_to_indices(uint8_t disp[32][8], unsigned int **indices);
 
 static void resize_callback(GLFWwindow* window, int width, int height) {
     glViewport(0, 0, width, height);
+}
+
+static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods){
+        const char* key_name = glfwGetKeyName(key, scancode);
+        if((action == GLFW_PRESS || action == GLFW_RELEASE) && key_name != NULL){
+                int i;
+                for(i = 0; i < 16; i++){
+                        if(keycodes[i] == key_name[0]) break;
+                }
+                if(i != 16){
+                        struct ui *u = glfwGetWindowUserPointer(window);
+                        if(u == NULL){
+                                return;
+                        }
+                        struct keyEvent ke;
+                        ke.key = i;
+                        ke.type = (action == GLFW_PRESS) ? Pressed : Released;
+                        chip8_key_event_notify(u->chip, ke);
+
+                }
+        }
 }
 
 static size_t chip8_disp_to_indices(uint8_t disp[32][8], unsigned int **indices){
@@ -60,6 +88,7 @@ static void *ui_render(void *arg){
         }
         glfwMakeContextCurrent(win);
         glfwSetFramebufferSizeCallback(win, resize_callback);
+        glfwSetKeyCallback(win, key_callback);
         glfwSetWindowUserPointer(win, u);
         glewExperimental = GL_TRUE;
         if(glewInit() != GLEW_OK){

@@ -151,6 +151,7 @@ struct mState *chip8_init(void){
         /* init the UI */
         ms->display = ui_init();
         if(ms->display == NULL) goto uiInitFail;
+        ms->display->chip = ms;
 
         return ms;
 uiInitFail:
@@ -412,6 +413,7 @@ void run_instruction(struct mState *ms, uint16_t ins){
                                                 pthread_cond_timedwait(&ms->incomingKeyEvent, &ms->keyMutex, &ts);
                                                 if(ms->lastEvent.type == Pressed){
                                                         ms->registers[rID] = ms->lastEvent.key;
+                                                        pthread_mutex_unlock(&ms->keyMutex);
                                                         break;
                                                 }
                                                 pthread_mutex_unlock(&ms->keyMutex);
